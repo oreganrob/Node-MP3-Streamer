@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <script>
+      if ("WebSocket" in window){
+        // Let us open a web socket
+        var ws = new WebSocket("ws://localhost:8080");
+		ws.binaryType = 'arraybuffer';
+		
+		var nextStartTime = 0;
+		var soundBuffer;		
+		node={};					
+		var context = null;
+		
+		window.addEventListener('load', init, false);		
+		function init() {
+			try {
+				context = new webkitAudioContext();
+				var source = context.createBufferSource(); // creates a sound source
+				//source.buffer = buffer;                    // tell the source which sound to play
+				source.connect(context.destination);       // connect the source to the context's destination (the speakers)
+			} catch(e) {
+				alert('Web Audio API is not supported in this browser');
+			}
+		}
+        
+		ws.onopen = function(){
+          // Web Socket is connected, send data using send()
+          //ws.send("Message to send");
+          //console.log("Message is sent...");
+        };
+        
+		/*ws.onmessage = function (evt) { 
+          var received_msg = evt.data;
+          console.log("Message is received: ",received_msg);
+        };*/
+		ws.onmessage = function (evt) {
+			//console.log(evt.data.byteLength);
+			console.log(evt.data);	
+			//console.log("Type: "+typeof evt.data);
+			
+			node.buf=evt.data;
+			node.sync=0;
+			node.retry=0;
+			//if(evt.data.byteLength > 100)
+				decode(node);
+			
+			//soundBuffer = evt.data;
+			/*var received_msg = evt.data;
+			
+			var x = new Uint8Array(evt.data, 0, evt.data.byteLength);
+			console.log(x);
+			
+			context.decodeAudioData(
+				received_msg,
+				function(buffer) {
+					console.log("Success "+buffer.duration);
+					playSound(buffer);
+					//if(nextStartTime == 0)
+					//	nextStartTime = context.currentTime;
+					//else nextStartTime = nextStartTime + buffer.duration;
+				}, onError    
+			);*/
+		};
+		
+		function syncStream(node){ // should be done by api itself. and hopefully will.
+			var buf8 = new Uint8Array(node.buf); 
+			buf8.indexOf = Array.prototype.indexOf;
+			var i=node.sync, b=buf8;
+			while(1) {
+				node.retry++;
+				i=b.indexOf(0xFF,i); if(i==-1 || (b[i+1] & 0xE0 == 0xE0 )) break;
+				i++;
+			}
+			if(i!=-1) {
+				var tmp=node.buf.slice(i); //carefull there it returns copy
+				delete(node.buf); node.buf=null;
+				node.buf=tmp;
+				node.sync=i;
+				return true;
+			}
+			return false;
+		}
+
+		function decode(node) {
+			try{
+				context.decodeAudioData(node.buf,
+				function(decoded){
+					node.source = context.createBufferSource();
+					node.source.connect(context.destination);
+					node.source.buffer=decoded; 
+					node.source.noteOn(0);
+				},
+				function(){ // only on error attempt to sync on frame boundary
+					if(syncStream(node)) decode(node);
+				});
+			} catch(e) {
+				console.log('decode exception',e.message);
+			}
+		}
+		
+		function onError(e) {
+			console.log("Error: "+e);
+		}
+		
+		ws.onclose = function(){ 
+          // websocket is closed.
+          console.log("Connection is closed..."); 
+        };
+
+		/*function decodeHandler(buffer) {
+			console.log("Received: "+data);
+		}
+		
+		function playSound(buffer) {
+		  //var source = context.createBufferSource(); // creates a sound source
+		  source.buffer = buffer;                    // tell the source which sound to play
+		  //source.connect(context.destination);       // connect the source to the context's destination (the speakers)
+		  source.noteOn(0);                          // play the source now
+		  //source.start(nextStartTime);
+		}*/
+      } else {
+        // The browser doesn't support WebSocket
+        console.log("WebSocket NOT supported by your Browser!");
+      }
+    </script>
+  </body>
+</html>
